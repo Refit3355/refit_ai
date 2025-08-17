@@ -20,6 +20,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet || true
+          docker system prune -af || true
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -31,7 +36,9 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Enable buildx
-        run: docker buildx create --use
+        run: |
+          docker buildx create --use
+          docker buildx inspect --bootstrap
 
       - name: Build & Push image
         env:
@@ -41,6 +48,8 @@ jobs:
           TAG="${GITHUB_SHA}"
           docker buildx build \
             --platform linux/amd64 \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
             -f Dockerfile \
             -t $ECR_REG/$REPO:$TAG \
             -t $ECR_REG/$REPO:latest \
@@ -55,17 +64,38 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
+
             ECR_REG="${{ steps.ecr.outputs.registry }}"
             REGION="${{ secrets.AWS_REGION }}"
             REPO="${{ secrets.ECR_REPOSITORY }}"
             IMG="$ECR_REG/$REPO:latest"
 
-            aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REG
+            aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_REG"
+
+            docker system prune -af --volumes || true
+
+            if docker compose version >/dev/null 2>&1; then
+              DC="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              DC="docker-compose"
+            else
+              if command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y docker-compose-plugin || sudo apt-get install -y docker-compose
+              elif command -v yum >/dev/null 2>&1; then
+                sudo yum install -y docker-compose-plugin || sudo yum install -y docker-compose
+              fi
+              if docker compose version >/dev/null 2>&1; then
+                DC="docker compose"
+              else
+                DC="docker-compose"
+              fi
+            fi
 
             docker pull "$IMG" || true
 
             cd /opt/refit-ai
-            docker compose pull
-            docker compose up -d --remove-orphans
+            $DC pull
+            $DC up -d --remove-orphans
 
-            docker image prune -f
+            docker image prune -f || true
