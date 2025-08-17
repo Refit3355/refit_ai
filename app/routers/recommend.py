@@ -11,7 +11,7 @@ from app.core.weather import fetch_weather_ctx
 router = APIRouter(prefix="/products/recommendation", tags=["recommend"])
 
 def _fallback_basic(req: RecommendAiRequest, weather, label: str):
-    """기본 가벼운 추천으로 재시도"""
+    """폴백 시 가벼운 추천으로 재시도"""
     frames = load_frames()
     q = f"member:{req.memberId} category:{req.preferCategoryId if req.preferCategoryId is not None else 'all'} {label}"
     df = simple_recommend(

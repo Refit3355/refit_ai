@@ -61,7 +61,7 @@ def load_frames_beauty() -> dict:
             df_product[c] = pd.to_numeric(df_product[c], errors="coerce").fillna(0.0)
 
     # 회원 상태/고민
-    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","SKIN_TYPE"])
+    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","SKIN_TYPE","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
     df_hc   = read_sql_df(f"SELECT * FROM {qualify('HEALTH_CONCERN')}")
     df_hair = read_sql_df(f"SELECT * FROM {qualify('HAIR_CONCERN')}")
     df_skin = read_sql_df(f"SELECT * FROM {qualify('SKIN_CONCERN')}")
@@ -180,6 +180,35 @@ def build_query_text(member_id: int, frames: dict, prefer_category_name: str = N
     if health_list:   parts.append(f"건강고민={','.join(health_list)}")
     if prefer_category_name: parts.append(f"카테고리={prefer_category_name}")
 
+    beauty_effects = {"보습","진정","주름 개선","미백","자외선 차단","여드름 완화","가려움 개선","튼살 개선"}
+    if not df_hi.empty:
+        row = df_hi[df_hi["MEMBER_ID"] == member_id]
+        if not row.empty:
+            steps = _nz(row.iloc[0].get("STEPS"), np.nan)
+            glu = _nz(row.iloc[0].get("BLOOD_GLUCOSE"), np.nan)
+            bp = _nz(row.iloc[0].get("BLOOD_PRESSURE"), np.nan)
+            kcal = _nz(row.iloc[0].get("TOTAL_CALORIES_BURNED"), np.nan)
+            nutr = _nz(row.iloc[0].get("NUTRITION"), np.nan)
+            sleep = _nz(row.iloc[0].get("SLEEPSESSION"), np.nan)
+            eff_from_metrics = []
+            if np.isfinite(sleep) and sleep < 420:
+                eff_from_metrics += ["보습","주름 개선"]
+            if np.isfinite(glu) and glu >= 126:
+                eff_from_metrics += ["주름 개선","여드름 완화"]
+            if np.isfinite(nutr) and nutr <= 1:
+                eff_from_metrics += ["보습"]
+            if np.isfinite(steps) and steps > 10000:
+                eff_from_metrics += ["진정","여드름 완화"]
+            if np.isfinite(kcal) and kcal > 700:
+                eff_from_metrics += ["진정","여드름 완화"]
+            if np.isfinite(bp) and bp >= 130:
+                eff_from_metrics += ["진정"]
+            eff_from_metrics = normalize_effect_names(eff_from_metrics, vocab)
+            eff_from_metrics = sorted(set([e for e in eff_from_metrics if e in beauty_effects]))
+            if eff_from_metrics:
+                target_effects = sorted(set(target_effects + eff_from_metrics))
+                parts.append(f"건강지표효능={','.join(eff_from_metrics)}")
+
     return {
         "query_text": " | ".join(parts) if parts else "고민 없음",
         "target_effects": target_effects,
@@ -190,7 +219,7 @@ _RAW_WEATHER_RULES = [
     {"cond": lambda w: _nz(w.get("uvi"), 0.0) >= 7.0,
      "effects": ["진정","미백","자외선 차단","항산화"], "bonus": 1.0},
     {"cond": lambda w: _nz(w.get("humidity"), 100.0) <= 40.0,
-     "effects": ["보습"], "bonus": 0.8},
+        "effects": ["보습"], "bonus": 0.8},
     {"cond": lambda w: (_nz(w.get("temp"), 0.0) >= 28.0) and (_nz(w.get("humidity"), 0.0) >= 60.0),
      "effects": ["진정"], "bonus": 0.6},
     {"cond": lambda w: _nz(w.get("pm25"), 0.0) >= 35.0,
