@@ -59,7 +59,7 @@ def load_frames_health() -> dict:
             df_product[c] = pd.to_numeric(df_product[c], errors="coerce").fillna(0.0)
 
     # 회원 상태
-    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","SKIN_TYPE"])
+    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","SKIN_TYPE","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
     df_hc   = read_sql_df(f"SELECT * FROM {qualify('HEALTH_CONCERN')}")
     df_hair = read_sql_df(f"SELECT * FROM {qualify('HAIR_CONCERN')}")
     df_skin = read_sql_df(f"SELECT * FROM {qualify('SKIN_CONCERN')}")
@@ -101,7 +101,6 @@ def get_health_effect_vocab(df_effect: pd.DataFrame) -> set:
     return set(sub["EFFECT_NAME"].astype(str).str.strip())
 
 EFFECT_ALIAS: Dict[str, str] = {
-    # 예: "혈액순환": "혈행 개선"
 }
 def normalize_health_effect_names(names: List[str], vocab: set) -> List[str]:
     out = []
@@ -143,6 +142,36 @@ def build_query_text(member_id: int, frames: dict, prefer_category_name: str = N
     parts=[]
     if health_list: parts.append(f"건강고민={','.join(health_list)}")
     if prefer_category_name: parts.append(f"카테고리={prefer_category_name}")
+
+    health_effects = {"혈행 개선","장 건강","면역력 증진","항산화","눈 건강","뼈 건강","활력","피부 건강"}
+    df_hi = frames["df_hi"]
+    if not df_hi.empty:
+        row = df_hi[df_hi["MEMBER_ID"] == member_id]
+        if not row.empty:
+            steps = _nz(row.iloc[0].get("STEPS"), np.nan)
+            glu = _nz(row.iloc[0].get("BLOOD_GLUCOSE"), np.nan)
+            bp = _nz(row.iloc[0].get("BLOOD_PRESSURE"), np.nan)
+            kcal = _nz(row.iloc[0].get("TOTAL_CALORIES_BURNED"), np.nan)
+            nutr = _nz(row.iloc[0].get("NUTRITION"), np.nan)
+            sleep = _nz(row.iloc[0].get("SLEEPSESSION"), np.nan)
+            eff_from_metrics = []
+            if np.isfinite(sleep) and sleep < 420:
+                eff_from_metrics += ["활력"]
+            if np.isfinite(steps) and steps < 5000:
+                eff_from_metrics += ["혈행 개선","활력"]
+            if np.isfinite(glu) and glu >= 126:
+                eff_from_metrics += ["장 건강"]
+            if np.isfinite(bp) and bp >= 130:
+                eff_from_metrics += ["혈행 개선"]
+            if np.isfinite(nutr) and nutr <= 1:
+                eff_from_metrics += ["면역력 증진"]
+            if np.isfinite(kcal) and kcal > 700:
+                eff_from_metrics += ["활력"]
+            eff_from_metrics = normalize_health_effect_names(eff_from_metrics, vocab)
+            eff_from_metrics = sorted(set([e for e in eff_from_metrics if e in health_effects]))
+            if eff_from_metrics:
+                target_effects = sorted(set(target_effects + eff_from_metrics))
+                parts.append(f"건강지표효능={','.join(eff_from_metrics)}")
 
     return {
         "query_text": " | ".join(parts) if parts else "건강 고민 없음",

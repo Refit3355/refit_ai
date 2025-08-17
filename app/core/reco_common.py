@@ -18,7 +18,9 @@ def load_frames() -> dict:
             on="CATEGORY_ID", how="left"
         )
 
-    return {"df_product": df_product, "df_category": df_category}
+    df_hi = safe_select("HEALTH_INFO", ["MEMBER_ID","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION","SKIN_TYPE"])
+
+    return {"df_product": df_product, "df_category": df_category, "df_hi": df_hi}
 
 
 # ---- 상품 텍스트 생성 (임베딩 입력) ----
@@ -63,20 +65,79 @@ def simple_recommend(
     if dp.empty:
         return pd.DataFrame(columns=["productId", "name", "finalScore"])
 
-    # 카테고리 제한
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
         dp = dp[dp["CATEGORY_ID"] == int(prefer_category_id)]
 
-    # 재고 필터
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    # 텍스트 생성 및 인덱스 빌드
     dp = attach_product_text(dp)
     index, ids = build_faiss_index(dp)
 
-    # 쿼리 인코딩 & 검색
-    qv = encode_queries([query_text])
+    import re
+    def _nz(x, d):
+        try:
+            if x is None: return d
+            v = float(x)
+            if np.isfinite(v): return v
+        except Exception:
+            pass
+        return d
+
+    member_id = None
+    m = re.search(r"member:(\d+)", query_text)
+    if m:
+        try:
+            member_id = int(m.group(1))
+        except Exception:
+            member_id = None
+
+    enriched = query_text
+    df_hi = frames.get("df_hi", pd.DataFrame())
+    eff = []
+    if member_id is not None and not df_hi.empty and "MEMBER_ID" in df_hi.columns:
+        row = df_hi[df_hi["MEMBER_ID"] == member_id]
+        if not row.empty:
+            r = row.iloc[0]
+            steps = _nz(r.get("STEPS"), np.nan)
+            glu = _nz(r.get("BLOOD_GLUCOSE"), np.nan)
+            bp = _nz(r.get("BLOOD_PRESSURE"), np.nan)
+            kcal = _nz(r.get("TOTAL_CALORIES_BURNED"), np.nan)
+            nutr = _nz(r.get("NUTRITION"), np.nan)
+            sleep = _nz(r.get("SLEEPSESSION"), np.nan)
+            if product_type == 1:
+                if np.isfinite(nutr) and nutr <= 1: eff += ["보습"]
+                if np.isfinite(sleep) and sleep < 420: eff += ["진정"]
+                if np.isfinite(kcal) and kcal > 700: eff += ["진정"]
+                eff = [e for e in eff if e in {"보습","진정","주름 개선","미백","자외선 차단","여드름 완화","가려움 개선","튼살 개선"}]
+            elif product_type == 2:
+                if np.isfinite(nutr) and nutr <= 1: eff += ["손상모 개선","탈모 개선"]
+                if np.isfinite(steps) and steps < 5000: eff += ["탈모 개선"]
+                if np.isfinite(sleep) and sleep < 420: eff += ["탈모 개선"]
+                if np.isfinite(bp) and bp >= 130: eff += ["두피 개선"]
+                if np.isfinite(glu) and glu >= 126: eff += ["두피 개선"]
+                if np.isfinite(kcal) and kcal > 700: eff += ["두피 개선"]
+                eff = [e for e in eff if e in {"손상모 개선","탈모 개선","두피 개선"}]
+            elif product_type == 3:
+                if np.isfinite(sleep) and sleep < 420: eff += ["활력"]
+                if np.isfinite(steps) and steps < 5000: eff += ["혈행 개선","활력"]
+                if np.isfinite(glu) and glu >= 126: eff += ["장 건강"]
+                if np.isfinite(bp) and bp >= 130: eff += ["혈행 개선"]
+                if np.isfinite(nutr) and nutr <= 1: eff += ["면역력 증진"]
+                if np.isfinite(kcal) and kcal > 700: eff += ["활력"]
+                eff = [e for e in eff if e in {"혈행 개선","장 건강","면역력 증진","항산화","눈 건강","뼈 건강","활력","피부 건강"}]
+            else:
+                if np.isfinite(nutr) and nutr <= 1: eff += ["보습","면역력 증진"]
+                if np.isfinite(sleep) and sleep < 420: eff += ["진정","활력"]
+                if np.isfinite(steps) and steps < 5000: eff += ["탈모 개선","혈행 개선"]
+                if np.isfinite(bp) and bp >= 130: eff += ["두피 개선","혈행 개선"]
+                if np.isfinite(glu) and glu >= 126: eff += ["두피 개선","장 건강"]
+                if np.isfinite(kcal) and kcal > 700: eff += ["진정","활력"]
+            eff = sorted(set(eff))
+            if eff:
+                enriched = f"{query_text} | 건강지표효능={','.join(eff)}"
+
+    qv = encode_queries([enriched])
     k = min(int(topk), len(ids))
     if k <= 0:
         return pd.DataFrame(columns=["productId", "name", "finalScore"])
@@ -93,7 +154,7 @@ def simple_recommend(
             "name": row.get("PRODUCT_NAME"),
             "categoryId": int(row.get("CATEGORY_ID")) if pd.notna(row.get("CATEGORY_ID")) else None,
             "sim": float(sim),
-            "finalScore": float(sim),  # 유사도=최종점수
+            "finalScore": float(sim),
             "price": int(row["PRICE"]) if "PRICE" in dp.columns and pd.notna(row.get("PRICE")) else None,
             "brand": row.get("BRAND_NAME"),
             "stock": int(row["STOCK"]) if "STOCK" in dp.columns and pd.notna(row.get("STOCK")) else None,
