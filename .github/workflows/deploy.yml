@@ -1,0 +1,71 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  IMAGE_NAME: refit-ai
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Enable buildx
+        run: docker buildx create --use
+
+      - name: Build & Push image
+        env:
+          ECR_REG: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ secrets.ECR_REPOSITORY }}
+        run: |
+          TAG="${GITHUB_SHA}"
+          docker buildx build \
+            --platform linux/amd64 \
+            -f Dockerfile \
+            -t $ECR_REG/$REPO:$TAG \
+            -t $ECR_REG/$REPO:latest \
+            --push \
+            .
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            ECR_REG="${{ steps.ecr.outputs.registry }}"
+            REGION="${{ secrets.AWS_REGION }}"
+            REPO="${{ secrets.ECR_REPOSITORY }}"
+            IMG="$ECR_REG/$REPO:latest"
+
+            aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_REG
+
+            docker pull "$IMG" || true
+
+            cd /opt/refit-ai
+            docker compose pull
+            docker compose up -d --remove-orphans
+
+            docker image prune -f
