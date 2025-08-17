@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic>=2
+python-dotenv
+requests
+oracledb
+pandas
+numpy
+faiss-cpu
+sentence-transformers
