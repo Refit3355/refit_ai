@@ -19,7 +19,7 @@ FINAL  = 10
 def load_frames_all() -> dict:
     df_category = safe_select("CATEGORY", ["CATEGORY_ID","CATEGORY_NAME","DELETED_AT"])
     df_effect   = safe_select("EFFECT",   ["EFFECT_ID","EFFECT_NAME","BH_TYPE","DELETED_AT"])
-    df_product  = safe_select("PRODUCT",  ["PRODUCT_ID","PRODUCT_NAME","CATEGORY_ID","PRICE","BRAND_NAME","DELETED_AT"])
+    df_product  = safe_select("PRODUCT",  ["PRODUCT_ID", "DISCOUNT_RATE","THUMBNAIL_URL", "PRODUCT_NAME","CATEGORY_ID","PRICE","BRAND_NAME","DELETED_AT"])
     df_product_effect = safe_select("PRODUCT_EFFECT", ["PRODUCT_ID","EFFECT_ID"])
 
     if {"CATEGORY_ID","CATEGORY_NAME"}.issubset(df_category.columns):
@@ -321,6 +321,8 @@ def recommend_all(member_id: int,
             "name": prow.get("PRODUCT_NAME"),
             "category": prow.get("CATEGORY_NAME"),
             "categoryId": int(prow.get("CATEGORY_ID")) if pd.notna(prow.get("CATEGORY_ID")) else None,
+            "discountRate": int(prow["DISCOUNT_RATE"]) if "DISCOUNT_RATE" in dp.columns and pd.notna(prow.get("DISCOUNT_RATE")) else None,
+            "thumbnailUrl": str(prow.get("THUMBNAIL_URL")) if "THUMBNAIL_URL" in dp.columns and pd.notna(prow.get("THUMBNAIL_URL")) else None,
             "sim": float(sim),
             "effMatch": float(eff_score),
             "finalScore": float(final_score),
