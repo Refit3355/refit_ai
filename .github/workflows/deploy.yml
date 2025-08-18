@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Free up disk space (tools, android, dotnet, swap)
-        uses: jlumbroso/free-disk-space@v1
+        uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
           android: true
