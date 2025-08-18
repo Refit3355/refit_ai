@@ -11,6 +11,7 @@ permissions:
 
 env:
   IMAGE_NAME: refit-ai
+  DOCKER_BUILDKIT: 1
 
 jobs:
   build-and-deploy:
@@ -20,10 +21,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Free disk space on runner
+      - name: Free up disk space (tools, android, dotnet, swap)
+        uses: jlumbroso/free-disk-space@v1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - name: Extra prune
         run: |
+          docker system prune -af --volumes || true
+          docker buildx prune -af || true
           sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet || true
-          docker system prune -af || true
+          sudo df -h
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -51,8 +65,11 @@ jobs:
             -f Dockerfile \
             -t $ECR_REG/$REPO:$TAG \
             -t $ECR_REG/$REPO:latest \
-            --push \
-            .
+            --cache-from=type=gha \
+            --cache-to=type=gha,mode=max \
+            --provenance=false \
+            --sbom=false \
+            --push .
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -62,7 +79,6 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
-
             ECR_REG="${{ steps.ecr.outputs.registry }}"
             REGION="${{ secrets.AWS_REGION }}"
             REPO="${{ secrets.ECR_REPOSITORY }}"
