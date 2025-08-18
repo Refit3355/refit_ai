@@ -48,8 +48,6 @@ jobs:
           TAG="${GITHUB_SHA}"
           docker buildx build \
             --platform linux/amd64 \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
             -f Dockerfile \
             -t $ECR_REG/$REPO:$TAG \
             -t $ECR_REG/$REPO:latest \
