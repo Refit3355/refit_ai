@@ -100,8 +100,8 @@ def get_health_effect_vocab(df_effect: pd.DataFrame) -> set:
     sub = df_effect[df_effect["BH_TYPE"] == 1]
     return set(sub["EFFECT_NAME"].astype(str).str.strip())
 
-EFFECT_ALIAS: Dict[str, str] = {
-}
+EFFECT_ALIAS: Dict[str, str] = {}
+
 def normalize_health_effect_names(names: List[str], vocab: set) -> List[str]:
     out = []
     for n in names:
@@ -117,6 +117,7 @@ _RAW_HEALTH_CONCERN_TO_EFFECTS: Dict[str, List[str]] = {
     "장 건강": ["장 건강"],
     "혈행 개선": ["혈행 개선"],
 }
+
 def build_query_text(member_id: int, frames: dict, prefer_category_name: str = None) -> dict:
     df_hc = frames["df_hc"]
 
@@ -188,6 +189,7 @@ _RAW_WEATHER_RULES = [
     {"cond": lambda w: _nz(w.get("uvi"), 0.0) < 3.0,
      "effects": ["뼈 건강"], "bonus": 0.6}
 ]
+
 def normalize_rule_effects(rules: List[dict], vocab: set) -> List[dict]:
     out=[]
     for r in rules:
@@ -228,9 +230,10 @@ def build_faiss_index(dp: pd.DataFrame):
     texts = dp["PRODUCT_TEXT"].tolist()
     vecs  = encode_passages(texts)
     ids   = dp["PRODUCT_ID"].to_numpy(dtype=np.int64)
-    index = faiss.IndexFlatIP(vecs.shape[1])
-    index.add(vecs)
-    return index, ids
+    base  = faiss.IndexFlatIP(vecs.shape[1])
+    index = faiss.IndexIDMap(base)
+    index.add_with_ids(vecs, ids)
+    return index
 
 def effect_match_score(product_id: int, target_effects: List[str], prod_effects: Dict[int, List[str]]) -> float:
     if not target_effects: return 0.0
@@ -276,8 +279,8 @@ def recommend_health(member_id: int,
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    index, ids = build_faiss_index(dp)
-    k = min(int(topk), len(ids)) if len(ids) > 0 else 0
+    index = build_faiss_index(dp)
+    k = min(int(topk), len(dp)) if len(dp) > 0 else 0
     if k == 0:
         return pd.DataFrame(columns=["productId","name","category","sim","effMatch","finalScore"])
 
@@ -290,10 +293,9 @@ def recommend_health(member_id: int,
     wctx = weather_ctx or {}
 
     rows = []
-    for idx, sim in zip(I[0], D[0]):
-        if idx < 0 or not np.isfinite(sim): 
+    for pid, sim in zip(I[0], D[0]):
+        if pid < 0 or not np.isfinite(sim): 
             continue
-        pid = int(ids[idx])
         prow = dp[dp["PRODUCT_ID"]==pid].iloc[0]
 
         eff_score = effect_match_score(pid, q["target_effects"], prod_effects)

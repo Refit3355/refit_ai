@@ -263,9 +263,9 @@ def build_faiss_index(dp: pd.DataFrame):
     texts = dp["PRODUCT_TEXT"].tolist()
     vecs  = encode_passages(texts)
     ids   = dp["PRODUCT_ID"].to_numpy(dtype=np.int64)
-    index = faiss.IndexFlatIP(vecs.shape[1])
-    index.add(vecs)
-    return index, ids
+    index = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
+    index.add_with_ids(vecs, ids)
+    return index
 
 def effect_match_score(product_id: int, target_effects: List[str], prod_effects: Dict[int, List[str]]) -> float:
     if not target_effects: return 0.0
@@ -310,8 +310,8 @@ def recommend_beauty(member_id: int,
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    index, ids = build_faiss_index(dp)
-    k = min(int(topk), len(ids)) if len(ids) > 0 else 0
+    index = build_faiss_index(dp)
+    k = min(int(topk), len(dp)) if len(dp) > 0 else 0
     if k == 0:
         return pd.DataFrame(columns=["PRODUCT_ID","NAME","CATEGORY","SIM","EFF_MATCH","FINAL_SCORE","PRICE","BRAND"])
 
@@ -324,10 +324,9 @@ def recommend_beauty(member_id: int,
 
     wctx = weather_ctx or {}
     rows = []
-    for idx, sim in zip(I[0], D[0]):
-        if idx < 0 or not np.isfinite(sim): 
+    for pid, sim in zip(I[0], D[0]):
+        if pid < 0 or not np.isfinite(sim): 
             continue
-        pid = int(ids[idx])
         prow = dp[dp["PRODUCT_ID"]==pid].iloc[0]
 
         eff_score = effect_match_score(pid, q["target_effects"], prod_effects)
