@@ -245,9 +245,11 @@ def build_faiss_index(dp: pd.DataFrame):
     texts = dp["PRODUCT_TEXT"].tolist()
     vecs  = encode_passages(texts)
     ids   = dp["PRODUCT_ID"].to_numpy(dtype=np.int64)
-    index = faiss.IndexFlatIP(vecs.shape[1])
-    index.add(vecs)
-    return index, ids
+
+    base = faiss.IndexFlatIP(vecs.shape[1])
+    index = faiss.IndexIDMap(base)
+    index.add_with_ids(vecs, ids)
+    return index
 
 def effect_match_score(product_id: int, target_effects: List[str], prod_effects: Dict[int, List[str]]) -> float:
     if not target_effects: return 0.0
@@ -278,8 +280,8 @@ def recommend_all(member_id: int,
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
         dp = dp[dp["CATEGORY_ID"] == int(prefer_category_id)]
 
-    index, ids = build_faiss_index(dp)
-    k = min(int(topk), len(ids)) if len(ids) > 0 else 0
+    index = build_faiss_index(dp)
+    k = min(int(topk), len(dp)) if len(dp) > 0 else 0
     if k == 0:
         return pd.DataFrame(columns=["productId","name","category","sim","effMatch","finalScore"])
 
@@ -292,15 +294,14 @@ def recommend_all(member_id: int,
     wctx = weather_ctx or {}
 
     rows = []
-    for idx, sim in zip(I[0], D[0]):
-        if idx < 0 or not np.isfinite(sim): 
+    for pid, sim in zip(I[0], D[0]):
+        if pid < 0 or not np.isfinite(sim):
             continue
-        pid = int(ids[idx])
-        prow = dp[dp["PRODUCT_ID"]==pid].iloc[0]
+        prow = dp[dp["PRODUCT_ID"] == pid].iloc[0]
 
         eff_score = effect_match_score(pid, q["target_effects"], prod_effects)
         pop_bonus = math.log1p(float(prow["UNITS_SOLD"])) if has_units and pd.notna(prow.get("UNITS_SOLD", None)) else 0.0
-        # 날씨 보정 
+
         def weather_bonus_for_product(product_id: int) -> float:
             effs = set(prod_effects.get(int(product_id), []))
             if not effs or not wctx: return 0.0
@@ -312,8 +313,8 @@ def recommend_all(member_id: int,
                         ratio = len(hit) / max(1, len(r["effects"]))
                         bonus += r["bonus"] * ratio
             return float(bonus)
-        w_bonus = weather_bonus_for_product(pid)
 
+        w_bonus = weather_bonus_for_product(pid)
         final_score = ALPHA*float(sim) + BETA*eff_score + LAMBDA*w_bonus + DELTA*pop_bonus
 
         rows.append({

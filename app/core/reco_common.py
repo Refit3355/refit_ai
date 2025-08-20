@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import List
 import numpy as np
 import pandas as pd
 import faiss
@@ -45,11 +45,14 @@ def attach_product_text(dp: pd.DataFrame) -> pd.DataFrame:
 # ---- FAISS 인덱스 ----
 def build_faiss_index(dp: pd.DataFrame):
     texts = dp["PRODUCT_TEXT"].tolist()
-    vecs  = encode_passages(texts)  # e5 passage 인코딩 (정규화 포함)
+    vecs  = encode_passages(texts)
     ids   = dp["PRODUCT_ID"].to_numpy(dtype=np.int64)
-    index = faiss.IndexFlatIP(vecs.shape[1])  # cosine(dot)용
-    index.add(vecs)
-    return index, ids
+
+    base = faiss.IndexFlatIP(vecs.shape[1])
+    index = faiss.IndexIDMap(base)
+    index.add_with_ids(vecs, ids)
+
+    return index
 
 
 # ---- 단순 공통 추천 (비상용/백업 로직) ----
@@ -65,14 +68,17 @@ def simple_recommend(
     if dp.empty:
         return pd.DataFrame(columns=["productId", "name", "finalScore"])
 
+    # 카테고리 선호 필터
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
         dp = dp[dp["CATEGORY_ID"] == int(prefer_category_id)]
 
+    # 재고 필터
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
+    # 텍스트 부착
     dp = attach_product_text(dp)
-    index, ids = build_faiss_index(dp)
+    index = build_faiss_index(dp)
 
     import re
     def _nz(x, d):
@@ -84,6 +90,7 @@ def simple_recommend(
             pass
         return d
 
+    # member 추출
     member_id = None
     m = re.search(r"member:(\d+)", query_text)
     if m:
@@ -92,6 +99,7 @@ def simple_recommend(
         except Exception:
             member_id = None
 
+    # 건강 지표 기반 enrich
     enriched = query_text
     df_hi = frames.get("df_hi", pd.DataFrame())
     eff = []
@@ -105,12 +113,13 @@ def simple_recommend(
             kcal = _nz(r.get("TOTAL_CALORIES_BURNED"), np.nan)
             nutr = _nz(r.get("NUTRITION"), np.nan)
             sleep = _nz(r.get("SLEEPSESSION"), np.nan)
-            if product_type == 1:
+
+            if product_type == 1:  # 스킨케어
                 if np.isfinite(nutr) and nutr <= 1: eff += ["보습"]
                 if np.isfinite(sleep) and sleep < 420: eff += ["진정"]
                 if np.isfinite(kcal) and kcal > 700: eff += ["진정"]
                 eff = [e for e in eff if e in {"보습","진정","주름 개선","미백","자외선 차단","여드름 완화","가려움 개선","튼살 개선"}]
-            elif product_type == 2:
+            elif product_type == 2:  # 헤어케어
                 if np.isfinite(nutr) and nutr <= 1: eff += ["손상모 개선","탈모 개선"]
                 if np.isfinite(steps) and steps < 5000: eff += ["탈모 개선"]
                 if np.isfinite(sleep) and sleep < 420: eff += ["탈모 개선"]
@@ -118,7 +127,7 @@ def simple_recommend(
                 if np.isfinite(glu) and glu >= 126: eff += ["두피 개선"]
                 if np.isfinite(kcal) and kcal > 700: eff += ["두피 개선"]
                 eff = [e for e in eff if e in {"손상모 개선","탈모 개선","두피 개선"}]
-            elif product_type == 3:
+            elif product_type == 3:  # 건강기능식품
                 if np.isfinite(sleep) and sleep < 420: eff += ["활력"]
                 if np.isfinite(steps) and steps < 5000: eff += ["혈행 개선","활력"]
                 if np.isfinite(glu) and glu >= 126: eff += ["장 건강"]
@@ -126,31 +135,34 @@ def simple_recommend(
                 if np.isfinite(nutr) and nutr <= 1: eff += ["면역력 증진"]
                 if np.isfinite(kcal) and kcal > 700: eff += ["활력"]
                 eff = [e for e in eff if e in {"혈행 개선","장 건강","면역력 증진","항산화","눈 건강","뼈 건강","활력","피부 건강"}]
-            else:
+            else:  # 혼합
                 if np.isfinite(nutr) and nutr <= 1: eff += ["보습","면역력 증진"]
                 if np.isfinite(sleep) and sleep < 420: eff += ["진정","활력"]
                 if np.isfinite(steps) and steps < 5000: eff += ["탈모 개선","혈행 개선"]
                 if np.isfinite(bp) and bp >= 130: eff += ["두피 개선","혈행 개선"]
                 if np.isfinite(glu) and glu >= 126: eff += ["두피 개선","장 건강"]
                 if np.isfinite(kcal) and kcal > 700: eff += ["진정","활력"]
+
             eff = sorted(set(eff))
             if eff:
                 enriched = f"{query_text} | 건강지표효능={','.join(eff)}"
 
+    # 검색
     qv = encode_queries([enriched])
-    k = min(int(topk), len(ids))
+    k = min(int(topk), len(dp))
     if k <= 0:
         return pd.DataFrame(columns=["productId", "name", "finalScore"])
 
     D, I = index.search(qv, k)
 
+    # 결과 매핑
     rows: List[dict] = []
-    for idx, sim in zip(I[0], D[0]):
-        if idx < 0 or not np.isfinite(sim):
+    for pid, sim in zip(I[0], D[0]):
+        if pid < 0 or not np.isfinite(sim):
             continue
-        row = dp.iloc[idx]
+        row = dp[dp["PRODUCT_ID"] == pid].iloc[0]
         rows.append({
-            "productId": int(ids[idx]),
+            "productId": int(row["PRODUCT_ID"]),
             "name": row.get("PRODUCT_NAME"),
             "categoryId": int(row.get("CATEGORY_ID")) if pd.notna(row.get("CATEGORY_ID")) else None,
             "sim": float(sim),
