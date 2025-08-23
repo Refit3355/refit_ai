@@ -8,6 +8,7 @@ pandas
 numpy
 faiss-cpu
 sentence-transformers
+apscheduler
 
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.3.*
