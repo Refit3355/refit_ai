@@ -6,6 +6,7 @@ import faiss
 
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
+from app.core.scheduler import global_index as global_index_all
 
 # ===== 파라미터 =====
 ALPHA  = 0.5   # 임베딩 유사도
@@ -280,8 +281,13 @@ def recommend_all(member_id: int,
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
         dp = dp[dp["CATEGORY_ID"] == int(prefer_category_id)]
 
-    index = build_faiss_index(dp)
+    if global_index_all is None:
+        index = build_faiss_index(dp)
+    else:
+        index = global_index_all
+
     k = min(int(topk), len(dp)) if len(dp) > 0 else 0
+
     if k == 0:
         return pd.DataFrame(columns=["productId","name","category","sim","effMatch","finalScore"])
 

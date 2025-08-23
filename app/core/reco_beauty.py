@@ -7,6 +7,7 @@ import faiss
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
 from app.core.weather import fetch_weather_ctx as fetch_weather_ctx_korea
+from app.core.scheduler import global_index_beauty as global_index
 
 # -----------------------------
 # 파라미터
@@ -310,7 +311,11 @@ def recommend_beauty(member_id: int,
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    index = build_faiss_index(dp)
+    if global_index is None:
+        index = build_faiss_index(dp)
+    else:
+        index = global_index
+
     k = min(int(topk), len(dp)) if len(dp) > 0 else 0
     if k == 0:
         return pd.DataFrame(columns=["PRODUCT_ID","NAME","CATEGORY","SIM","EFF_MATCH","FINAL_SCORE","PRICE","BRAND"])

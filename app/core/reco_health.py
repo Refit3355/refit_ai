@@ -6,6 +6,7 @@ import faiss
 
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
+from app.core.scheduler import global_index_health
 
 # -----------------------------
 # 파라미터
@@ -292,7 +293,11 @@ def recommend_health(member_id: int,
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    index = build_faiss_index(dp)
+    if global_index_health is None:
+        index = build_faiss_index(dp)
+    else:
+        index = global_index_health
+
     k = min(int(topk), len(dp)) if len(dp) > 0 else 0
     if k == 0:
         return pd.DataFrame(columns=["productId","name","category","sim","effMatch","finalScore"])

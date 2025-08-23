@@ -4,6 +4,7 @@ import logging
 
 from app.routers import recommend
 from app.core.embedding import init_model
+from app.core.scheduler import start_scheduler  
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,6 +15,8 @@ async def lifespan(app: FastAPI):
     try:
         init_model()
         logger.info("[startup] model init success")
+        start_scheduler()
+        logger.info("[startup] scheduler started")
     except Exception as e:
         logger.exception("[startup] model init failed")
     yield
