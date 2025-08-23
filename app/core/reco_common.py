@@ -67,7 +67,13 @@ def simple_recommend(
 ) -> pd.DataFrame:
     dp = frames["df_product"]
     if dp.empty:
-        return pd.DataFrame(columns=["productId", "name", "finalScore"])
+        return pd.DataFrame(columns=[
+            "productId","name","category","categoryId",
+            "sim","effMatch","finalScore",
+            "price","brand","stock","discountRate","thumbnailUrl",
+            "unitsSold","ordersSold"
+        ])
+
 
     # 카테고리 선호 필터
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
@@ -79,10 +85,10 @@ def simple_recommend(
 
     # 텍스트 부착
     dp = attach_product_text(dp)
-    if global_index is None:
-        index = build_faiss_index(dp)
-    else:
+    if global_index is not None and prefer_category_id is None:
         index = global_index
+    else:
+        index = build_faiss_index(dp)
 
     import re
     def _nz(x, d):
@@ -168,7 +174,12 @@ def simple_recommend(
     qv = encode_queries([enriched])
     k = min(int(topk), len(dp))
     if k <= 0:
-        return pd.DataFrame(columns=["productId", "name", "finalScore"])
+        return pd.DataFrame(columns=[
+            "productId","name","category","categoryId",
+            "sim","effMatch","finalScore",
+            "price","brand","stock","discountRate","thumbnailUrl",
+            "unitsSold","ordersSold"
+        ])
 
     D, I = index.search(qv, k)
 
@@ -188,7 +199,11 @@ def simple_recommend(
             "brand": row.get("BRAND_NAME"),
             "stock": int(row["STOCK"]) if "STOCK" in dp.columns and pd.notna(row.get("STOCK")) else None,
             "discountRate": int(row["DISCOUNT_RATE"]) if "DISCOUNT_RATE" in dp.columns and pd.notna(row.get("DISCOUNT_RATE")) else None,
-            "thumbnailUrl": row.get("THUMBNAIL_URL") if "THUMBNAIL_URL" in dp.columns else None
+            "thumbnailUrl": row.get("THUMBNAIL_URL") if "THUMBNAIL_URL" in dp.columns else None,
+            "category": row.get("CATEGORY_NAME") if "CATEGORY_NAME" in dp.columns else None,
+            "effMatch": 0.0,
+            "unitsSold": 0.0,
+            "ordersSold": 0.0,
         })
 
     res = pd.DataFrame(rows)

@@ -7,7 +7,8 @@ import faiss
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
 from app.core.weather import fetch_weather_ctx as fetch_weather_ctx_korea
-from app.core.scheduler import global_index_beauty as global_index
+from app.core.scheduler import global_index_beauty as global_index, global_weather_ctx
+
 
 # -----------------------------
 # 파라미터
@@ -311,14 +312,19 @@ def recommend_beauty(member_id: int,
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    if global_index is None:
-        index = build_faiss_index(dp)
-    else:
+    if global_index is not None and prefer_category_id is None:
         index = global_index
+    else:
+        index = build_faiss_index(dp)
 
     k = min(int(topk), len(dp)) if len(dp) > 0 else 0
     if k == 0:
-        return pd.DataFrame(columns=["PRODUCT_ID","NAME","CATEGORY","SIM","EFF_MATCH","FINAL_SCORE","PRICE","BRAND"])
+        return pd.DataFrame(columns=[
+            "productId","name","category","categoryId",
+            "sim","effMatch","finalScore",
+            "price","brand","stock","discountRate","thumbnailUrl",
+            "unitsSold","ordersSold"
+        ])
 
     qv = encode_queries([q["query_text"]])
     D, I = index.search(qv, k)
@@ -327,7 +333,7 @@ def recommend_beauty(member_id: int,
     weather_rules = normalize_rule_effects(_RAW_WEATHER_RULES, vocab)
     has_units = "UNITS_SOLD" in dp.columns
 
-    wctx = weather_ctx or {}
+    wctx = weather_ctx or global_weather_ctx or {}
     rows = []
     for pid, sim in zip(I[0], D[0]):
         if pid < 0 or not np.isfinite(sim): 

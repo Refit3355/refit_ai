@@ -6,7 +6,8 @@ import faiss
 
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
-from app.core.scheduler import global_index as global_index_all
+from app.core.scheduler import global_index as global_index_all, global_weather_ctx
+
 
 # ===== 파라미터 =====
 ALPHA  = 0.5   # 임베딩 유사도
@@ -281,10 +282,10 @@ def recommend_all(member_id: int,
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
         dp = dp[dp["CATEGORY_ID"] == int(prefer_category_id)]
 
-    if global_index_all is None:
-        index = build_faiss_index(dp)
-    else:
+    if global_index_all is not None and prefer_category_id is None:
         index = global_index_all
+    else:
+        index = build_faiss_index(dp)
 
     k = min(int(topk), len(dp)) if len(dp) > 0 else 0
 
@@ -297,7 +298,7 @@ def recommend_all(member_id: int,
     vocab = get_effect_vocab(frames["df_effect"])
     weather_rules = normalize_rule_effects(_RAW_WEATHER_RULES, vocab)
     has_units = "UNITS_SOLD" in dp.columns
-    wctx = weather_ctx or {}
+    wctx = weather_ctx or global_weather_ctx or {}
 
     rows = []
     for pid, sim in zip(I[0], D[0]):
