@@ -6,6 +6,7 @@ import faiss
 
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
+from app.core.scheduler import global_index_health, global_weather_ctx
 
 # -----------------------------
 # 파라미터
@@ -59,7 +60,7 @@ def load_frames_health() -> dict:
             df_product[c] = pd.to_numeric(df_product[c], errors="coerce").fillna(0.0)
 
     # 회원 상태
-    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","SKIN_TYPE","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
+    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
     df_hc   = read_sql_df(f"SELECT * FROM {qualify('HEALTH_CONCERN')}")
     df_hair = read_sql_df(f"SELECT * FROM {qualify('HAIR_CONCERN')}")
     df_skin = read_sql_df(f"SELECT * FROM {qualify('SKIN_CONCERN')}")
@@ -83,6 +84,8 @@ def _nz(x, default):
     except Exception:
         pass
     return default
+
+SKIN_TYPE_MAP = {1:"건성", 2:"중성", 3:"지성", 4:"복합성", 5:"수분 부족 지성"}
 
 HEALTH_FLAG_2_LABEL = {
     "EYE_HEALTH":"눈 건강",
@@ -120,6 +123,7 @@ _RAW_HEALTH_CONCERN_TO_EFFECTS: Dict[str, List[str]] = {
 
 def build_query_text(member_id: int, frames: dict, prefer_category_name: str = None) -> dict:
     df_hc = frames["df_hc"]
+    df_skin = frames["df_skin"]
 
     def pick_labels(df_one: pd.DataFrame, mapping: Dict[str,str]) -> List[str]:
         if df_one.empty: return []
@@ -136,11 +140,21 @@ def build_query_text(member_id: int, frames: dict, prefer_category_name: str = N
     hc_row = df_hc[df_hc["MEMBER_ID"]==member_id] if not df_hc.empty else pd.DataFrame()
     health_list = pick_labels(hc_row, HEALTH_FLAG_2_LABEL)
 
+    skin_type_txt = None
+    if not df_skin.empty and {"MEMBER_ID","SKIN_TYPE"}.issubset(df_skin.columns):
+        row = df_skin[df_skin["MEMBER_ID"] == member_id]
+        if not row.empty:
+            try:
+                skin_type_txt = SKIN_TYPE_MAP.get(int(row.iloc[0]["SKIN_TYPE"]))
+            except Exception:
+                skin_type_txt = None
+
     vocab = get_health_effect_vocab(frames["df_effect"])
     concern_to_effects = {k: normalize_health_effect_names(v, vocab) for k, v in _RAW_HEALTH_CONCERN_TO_EFFECTS.items()}
     target_effects = sorted(set(sum([concern_to_effects.get(x, []) for x in health_list], [])))
 
     parts=[]
+    if skin_type_txt: parts.append(f"피부타입={skin_type_txt}")
     if health_list: parts.append(f"건강고민={','.join(health_list)}")
     if prefer_category_name: parts.append(f"카테고리={prefer_category_name}")
 
@@ -177,7 +191,7 @@ def build_query_text(member_id: int, frames: dict, prefer_category_name: str = N
     return {
         "query_text": " | ".join(parts) if parts else "건강 고민 없음",
         "target_effects": target_effects,
-        "skin_type": None
+        "skin_type": skin_type_txt
     }
 
 # 날씨 룰
@@ -279,18 +293,27 @@ def recommend_health(member_id: int,
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    index = build_faiss_index(dp)
+    if global_index_health is not None and prefer_category_id is None:
+        index = global_index_health
+    else:
+        index = build_faiss_index(dp)
+
     k = min(int(topk), len(dp)) if len(dp) > 0 else 0
     if k == 0:
-        return pd.DataFrame(columns=["productId","name","category","sim","effMatch","finalScore"])
-
+        return pd.DataFrame(columns=[
+            "productId","name","category","categoryId",
+            "sim","effMatch","finalScore",
+            "price","brand","stock","discountRate","thumbnailUrl",
+            "unitsSold","ordersSold"
+        ])
+    
     qv = encode_queries([q["query_text"]])
     D, I = index.search(qv, k)
 
     vocab = get_health_effect_vocab(frames["df_effect"])
     weather_rules = normalize_rule_effects(_RAW_WEATHER_RULES, vocab)
     has_units = "UNITS_SOLD" in dp.columns
-    wctx = weather_ctx or {}
+    wctx = weather_ctx or global_weather_ctx or {}
 
     rows = []
     for pid, sim in zip(I[0], D[0]):
@@ -308,7 +331,7 @@ def recommend_health(member_id: int,
             "productId": pid,
             "name": prow.get("PRODUCT_NAME"),
             "category": prow.get("CATEGORY_NAME"),
-            "categoryId": int(prow.get("CATEGORY_ID")) if pd.notna(prow.get("CATEGORY_ID")) else None,
+            "categoryId": int(prow["CATEGORY_ID"]) if pd.notna(prow.get("CATEGORY_ID")) else None,
             "sim": float(sim),
             "effMatch": float(eff_score),
             "finalScore": float(final_score),

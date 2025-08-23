@@ -5,7 +5,7 @@ import faiss
 
 from app.core.db import safe_select
 from app.core.embedding import encode_queries, encode_passages
-
+from app.core.scheduler import global_index  
 
 # ---- 최소 프레임 로더 ----
 def load_frames() -> dict:
@@ -18,9 +18,10 @@ def load_frames() -> dict:
             on="CATEGORY_ID", how="left"
         )
 
-    df_hi = safe_select("HEALTH_INFO", ["MEMBER_ID","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION","SKIN_TYPE"])
+    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
+    df_skin = safe_select("SKIN_CONCERN", ["MEMBER_ID","SKIN_TYPE"])
 
-    return {"df_product": df_product, "df_category": df_category, "df_hi": df_hi}
+    return {"df_product": df_product, "df_category": df_category, "df_hi": df_hi, "df_skin": df_skin}
 
 
 # ---- 상품 텍스트 생성 (임베딩 입력) ----
@@ -66,7 +67,13 @@ def simple_recommend(
 ) -> pd.DataFrame:
     dp = frames["df_product"]
     if dp.empty:
-        return pd.DataFrame(columns=["productId", "name", "finalScore"])
+        return pd.DataFrame(columns=[
+            "productId","name","category","categoryId",
+            "sim","effMatch","finalScore",
+            "price","brand","stock","discountRate","thumbnailUrl",
+            "unitsSold","ordersSold"
+        ])
+
 
     # 카테고리 선호 필터
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
@@ -78,7 +85,10 @@ def simple_recommend(
 
     # 텍스트 부착
     dp = attach_product_text(dp)
-    index = build_faiss_index(dp)
+    if global_index is not None and prefer_category_id is None:
+        index = global_index
+    else:
+        index = build_faiss_index(dp)
 
     import re
     def _nz(x, d):
@@ -102,7 +112,20 @@ def simple_recommend(
     # 건강 지표 기반 enrich
     enriched = query_text
     df_hi = frames.get("df_hi", pd.DataFrame())
+    df_skin = frames.get("df_skin", pd.DataFrame())
     eff = []
+
+    if member_id is not None and not df_skin.empty and {"MEMBER_ID","SKIN_TYPE"}.issubset(df_skin.columns):
+        row = df_skin[df_skin["MEMBER_ID"] == member_id]
+        if not row.empty:
+            try:
+                SKIN_TYPE_MAP = {1:"건성", 2:"중성", 3:"지성", 4:"복합성", 5:"수분 부족 지성"}
+                skin_type_txt = SKIN_TYPE_MAP.get(int(row.iloc[0]["SKIN_TYPE"]))
+                if skin_type_txt:
+                    enriched = f"{enriched} | 피부타입={skin_type_txt}"
+            except Exception:
+                pass
+
     if member_id is not None and not df_hi.empty and "MEMBER_ID" in df_hi.columns:
         row = df_hi[df_hi["MEMBER_ID"] == member_id]
         if not row.empty:
@@ -145,13 +168,18 @@ def simple_recommend(
 
             eff = sorted(set(eff))
             if eff:
-                enriched = f"{query_text} | 건강지표효능={','.join(eff)}"
+                enriched = f"{enriched} | 건강지표효능={','.join(eff)}"
 
     # 검색
     qv = encode_queries([enriched])
     k = min(int(topk), len(dp))
     if k <= 0:
-        return pd.DataFrame(columns=["productId", "name", "finalScore"])
+        return pd.DataFrame(columns=[
+            "productId","name","category","categoryId",
+            "sim","effMatch","finalScore",
+            "price","brand","stock","discountRate","thumbnailUrl",
+            "unitsSold","ordersSold"
+        ])
 
     D, I = index.search(qv, k)
 
@@ -171,7 +199,11 @@ def simple_recommend(
             "brand": row.get("BRAND_NAME"),
             "stock": int(row["STOCK"]) if "STOCK" in dp.columns and pd.notna(row.get("STOCK")) else None,
             "discountRate": int(row["DISCOUNT_RATE"]) if "DISCOUNT_RATE" in dp.columns and pd.notna(row.get("DISCOUNT_RATE")) else None,
-            "thumbnailUrl": row.get("THUMBNAIL_URL") if "THUMBNAIL_URL" in dp.columns else None
+            "thumbnailUrl": row.get("THUMBNAIL_URL") if "THUMBNAIL_URL" in dp.columns else None,
+            "category": row.get("CATEGORY_NAME") if "CATEGORY_NAME" in dp.columns else None,
+            "effMatch": 0.0,
+            "unitsSold": 0.0,
+            "ordersSold": 0.0,
         })
 
     res = pd.DataFrame(rows)

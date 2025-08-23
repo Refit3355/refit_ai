@@ -6,6 +6,8 @@ import faiss
 
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
+from app.core.scheduler import global_index as global_index_all, global_weather_ctx
+
 
 # ===== 파라미터 =====
 ALPHA  = 0.5   # 임베딩 유사도
@@ -52,7 +54,7 @@ def load_frames_all() -> dict:
             df_product[c] = pd.to_numeric(df_product[c], errors="coerce").fillna(0.0)
 
     # 회원 상태/고민
-    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","SKIN_TYPE","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
+    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
     df_hc   = read_sql_df(f"SELECT * FROM {qualify('HEALTH_CONCERN')}")
     df_hair = read_sql_df(f"SELECT * FROM {qualify('HAIR_CONCERN')}")
     df_skin = read_sql_df(f"SELECT * FROM {qualify('SKIN_CONCERN')}")
@@ -75,7 +77,7 @@ def _nz(x, default):
         pass
     return default
 
-SKIN_TYPE_MAP = {1:"건성", 2:"지성", 3:"중성", 4:"복합성"}
+SKIN_TYPE_MAP = {1:"건성", 2:"중성", 3:"지성", 4:"복합성", 5:"수분 부족 지성"}
 SKIN_FLAG_2_LABEL = {
     "ATOPIC":"아토피","ACNE":"여드름","WHITENING":"미백","SEBUM":"피지",
     "INNER_DRYNESS":"속건조","WRINKLES":"주름","ENLARGED_PORES":"모공","REDNESS":"홍조","KERATIN":"각질"
@@ -127,8 +129,8 @@ def build_query_text(member_id: int, frames: dict, prefer_category_name: str = N
     df_hi, df_skin, df_hair, df_hc = frames["df_hi"], frames["df_skin"], frames["df_hair"], frames["df_hc"]
 
     skin_type_txt = None
-    if not df_hi.empty and {"MEMBER_ID","SKIN_TYPE"}.issubset(df_hi.columns):
-        row = df_hi[df_hi["MEMBER_ID"] == member_id]
+    if not df_skin.empty and {"MEMBER_ID","SKIN_TYPE"}.issubset(df_skin.columns):
+        row = df_skin[df_skin["MEMBER_ID"] == member_id]
         if not row.empty:
             try:
                 skin_type_txt = SKIN_TYPE_MAP.get(int(row.iloc[0]["SKIN_TYPE"]))
@@ -280,8 +282,13 @@ def recommend_all(member_id: int,
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
         dp = dp[dp["CATEGORY_ID"] == int(prefer_category_id)]
 
-    index = build_faiss_index(dp)
+    if global_index_all is not None and prefer_category_id is None:
+        index = global_index_all
+    else:
+        index = build_faiss_index(dp)
+
     k = min(int(topk), len(dp)) if len(dp) > 0 else 0
+
     if k == 0:
         return pd.DataFrame(columns=["productId","name","category","sim","effMatch","finalScore"])
 
@@ -291,7 +298,7 @@ def recommend_all(member_id: int,
     vocab = get_effect_vocab(frames["df_effect"])
     weather_rules = normalize_rule_effects(_RAW_WEATHER_RULES, vocab)
     has_units = "UNITS_SOLD" in dp.columns
-    wctx = weather_ctx or {}
+    wctx = weather_ctx or global_weather_ctx or {}
 
     rows = []
     for pid, sim in zip(I[0], D[0]):
