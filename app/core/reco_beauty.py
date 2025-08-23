@@ -7,7 +7,7 @@ import faiss
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
 from app.core.weather import fetch_weather_ctx as fetch_weather_ctx_korea
-from app.core.scheduler import global_index_beauty as global_index, global_weather_ctx
+from app.core import state
 
 
 # -----------------------------
@@ -312,8 +312,8 @@ def recommend_beauty(member_id: int,
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    if global_index is not None and prefer_category_id is None:
-        index = global_index
+    if state.global_index_beauty is not None and prefer_category_id is None:
+        index = state.global_index_beauty
     else:
         index = build_faiss_index(dp)
 
@@ -333,7 +333,7 @@ def recommend_beauty(member_id: int,
     weather_rules = normalize_rule_effects(_RAW_WEATHER_RULES, vocab)
     has_units = "UNITS_SOLD" in dp.columns
 
-    wctx = weather_ctx or global_weather_ctx or {}
+    wctx = weather_ctx or state.global_weather_ctx or {}
     rows = []
     for pid, sim in zip(I[0], D[0]):
         if pid < 0 or not np.isfinite(sim): 
