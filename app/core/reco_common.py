@@ -18,9 +18,10 @@ def load_frames() -> dict:
             on="CATEGORY_ID", how="left"
         )
 
-    df_hi = safe_select("HEALTH_INFO", ["MEMBER_ID","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION","SKIN_TYPE"])
+    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
+    df_skin = safe_select("SKIN_CONCERN", ["MEMBER_ID","SKIN_TYPE"])
 
-    return {"df_product": df_product, "df_category": df_category, "df_hi": df_hi}
+    return {"df_product": df_product, "df_category": df_category, "df_hi": df_hi, "df_skin": df_skin}
 
 
 # ---- 상품 텍스트 생성 (임베딩 입력) ----
@@ -102,7 +103,20 @@ def simple_recommend(
     # 건강 지표 기반 enrich
     enriched = query_text
     df_hi = frames.get("df_hi", pd.DataFrame())
+    df_skin = frames.get("df_skin", pd.DataFrame())
     eff = []
+
+    if member_id is not None and not df_skin.empty and {"MEMBER_ID","SKIN_TYPE"}.issubset(df_skin.columns):
+        row = df_skin[df_skin["MEMBER_ID"] == member_id]
+        if not row.empty:
+            try:
+                SKIN_TYPE_MAP = {1:"건성", 2:"중성", 3:"지성", 4:"복합성", 5:"수분 부족 지성"}
+                skin_type_txt = SKIN_TYPE_MAP.get(int(row.iloc[0]["SKIN_TYPE"]))
+                if skin_type_txt:
+                    enriched = f"{enriched} | 피부타입={skin_type_txt}"
+            except Exception:
+                pass
+
     if member_id is not None and not df_hi.empty and "MEMBER_ID" in df_hi.columns:
         row = df_hi[df_hi["MEMBER_ID"] == member_id]
         if not row.empty:
@@ -145,7 +159,7 @@ def simple_recommend(
 
             eff = sorted(set(eff))
             if eff:
-                enriched = f"{query_text} | 건강지표효능={','.join(eff)}"
+                enriched = f"{enriched} | 건강지표효능={','.join(eff)}"
 
     # 검색
     qv = encode_queries([enriched])

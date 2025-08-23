@@ -58,7 +58,7 @@ def load_frames_hair() -> dict:
             df_product[c] = pd.to_numeric(df_product[c], errors="coerce").fillna(0.0)
 
     # 회원 고민(헤어 중심)
-    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","SKIN_TYPE","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
+    df_hi   = safe_select("HEALTH_INFO", ["MEMBER_ID","STEPS","BLOOD_GLUCOSE","BLOOD_PRESSURE","TOTAL_CALORIES_BURNED","NUTRITION","SLEEPSESSION"])
     df_hc   = read_sql_df(f"SELECT * FROM {qualify('HEALTH_CONCERN')}")
     df_hair = read_sql_df(f"SELECT * FROM {qualify('HAIR_CONCERN')}")
     df_skin = read_sql_df(f"SELECT * FROM {qualify('SKIN_CONCERN')}")
@@ -82,6 +82,8 @@ def _nz(x, default):
     except Exception:
         pass
     return default
+
+SKIN_TYPE_MAP = {1:"건성", 2:"중성", 3:"지성", 4:"복합성", 5:"수분 부족 지성"}
 
 HAIR_FLAG_2_LABEL = {
     "HAIR_LOSS":"탈모","DAMAGED_HAIR":"손상모","SCALP_TROUBLE":"두피트러블","DANDRUFF":"비듬"
@@ -122,6 +124,7 @@ _RAW_WEATHER_RULES = [
 
 def build_query_text(member_id: int, frames: dict, prefer_category_name: str = None) -> dict:
     df_hair = frames["df_hair"]
+    df_skin = frames["df_skin"]
 
     def pick_labels(df_one: pd.DataFrame, mapping: Dict[str,str]) -> List[str]:
         if df_one.empty: return []
@@ -138,11 +141,21 @@ def build_query_text(member_id: int, frames: dict, prefer_category_name: str = N
     hair_row = df_hair[df_hair["MEMBER_ID"]==member_id] if not df_hair.empty else pd.DataFrame()
     hair_list = pick_labels(hair_row, HAIR_FLAG_2_LABEL)
 
+    skin_type_txt = None
+    if not df_skin.empty and {"MEMBER_ID","SKIN_TYPE"}.issubset(df_skin.columns):
+        row = df_skin[df_skin["MEMBER_ID"] == member_id]
+        if not row.empty:
+            try:
+                skin_type_txt = SKIN_TYPE_MAP.get(int(row.iloc[0]["SKIN_TYPE"]))
+            except Exception:
+                skin_type_txt = None
+
     vocab = get_effect_vocab(frames["df_effect"])
     concern_to_effects = {k: normalize_effect_names(v, vocab) for k, v in _RAW_HAIR_CONCERN_TO_EFFECTS.items()}
     target_effects = sorted(set(sum([concern_to_effects.get(x, []) for x in hair_list], [])))
 
     parts=[]
+    if skin_type_txt: parts.append(f"피부타입={skin_type_txt}")
     if hair_list: parts.append(f"두피/모발고민={','.join(hair_list)}")
     if prefer_category_name: parts.append(f"카테고리={prefer_category_name}")
 
@@ -179,7 +192,7 @@ def build_query_text(member_id: int, frames: dict, prefer_category_name: str = N
     return {
         "query_text": " | ".join(parts) if parts else "헤어 고민 없음",
         "target_effects": target_effects,
-        "skin_type": None
+        "skin_type": skin_type_txt
     }
 
 def normalize_rule_effects(rules: List[dict], vocab: set) -> List[dict]:
