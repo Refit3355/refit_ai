@@ -6,7 +6,7 @@ import faiss
 
 from app.core.db import safe_select, read_sql_df, qualify
 from app.core.embedding import encode_queries, encode_passages
-from app.core.scheduler import global_index_health, global_weather_ctx
+from app.core import state
 
 # -----------------------------
 # 파라미터
@@ -293,8 +293,8 @@ def recommend_health(member_id: int,
     if "STOCK" in dp.columns:
         dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
-    if global_index_health is not None and prefer_category_id is None:
-        index = global_index_health
+    if state.global_index_health is not None and prefer_category_id is None:
+        index = state.global_index_health
     else:
         index = build_faiss_index(dp)
 
@@ -313,7 +313,7 @@ def recommend_health(member_id: int,
     vocab = get_health_effect_vocab(frames["df_effect"])
     weather_rules = normalize_rule_effects(_RAW_WEATHER_RULES, vocab)
     has_units = "UNITS_SOLD" in dp.columns
-    wctx = weather_ctx or global_weather_ctx or {}
+    wctx = weather_ctx or state.global_weather_ctx or {}
 
     rows = []
     for pid, sim in zip(I[0], D[0]):

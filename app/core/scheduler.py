@@ -6,19 +6,14 @@ import faiss
 from app.core.reco_all import load_frames_all, attach_product_text, build_prod_effects
 from app.core.embedding import encode_passages
 from app.core.weather import fetch_weather_ctx 
+from app.core import state
 
-global_index = None
-global_index_beauty = None
-global_index_hair = None
-global_index_health = None
-global_weather_ctx = None
 
 def refresh_weather():
-    global global_weather_ctx
     print("날씨 캐싱 시작:", datetime.now())
     try:
-        global_weather_ctx = fetch_weather_ctx("서울")   # 기본: 서울
-        print("날씨 캐싱 완료:", global_weather_ctx)
+        state.global_weather_ctx = fetch_weather_ctx("서울")
+        print("날씨 캐싱 완료:", state.global_weather_ctx)
     except Exception as e:
         print("날씨 캐싱 실패:", e)
         
@@ -29,9 +24,8 @@ def refresh_embeddings():
     vecs = encode_passages(dp["PRODUCT_TEXT"].tolist())
     ids = dp["PRODUCT_ID"].to_numpy(dtype=np.int64)
 
-    global global_index
-    global_index = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
-    global_index.add_with_ids(vecs, ids)
+    state.global_index = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
+    state.global_index.add_with_ids(vecs, ids)
     print("임베딩 갱신 완료:", datetime.now())
     
 def refresh_embeddings_beauty():
@@ -42,9 +36,8 @@ def refresh_embeddings_beauty():
     vecs = encode_passages(dp["PRODUCT_TEXT"].tolist())
     ids = dp["PRODUCT_ID"].to_numpy(dtype=np.int64)
 
-    global global_index_beauty
-    global_index_beauty = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
-    global_index_beauty.add_with_ids(vecs, ids)
+    state.global_index_beauty = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
+    state.global_index_beauty.add_with_ids(vecs, ids)
     print("뷰티 임베딩 갱신 완료:", datetime.now())
 
 def refresh_embeddings_hair():
@@ -55,9 +48,8 @@ def refresh_embeddings_hair():
     vecs = encode_passages(dp["PRODUCT_TEXT"].tolist())
     ids = dp["PRODUCT_ID"].to_numpy(dtype=np.int64)
 
-    global global_index_hair
-    global_index_hair = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
-    global_index_hair.add_with_ids(vecs, ids)
+    state.global_index_hair = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
+    state.global_index_hair.add_with_ids(vecs, ids)
     print("헤어 임베딩 갱신 완료:", datetime.now())
     
 def refresh_embeddings_health():
@@ -68,9 +60,8 @@ def refresh_embeddings_health():
     vecs = encode_passages(dp["PRODUCT_TEXT"].tolist())
     ids = dp["PRODUCT_ID"].to_numpy(dtype=np.int64)
 
-    global global_index_health
-    global_index_health = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
-    global_index_health.add_with_ids(vecs, ids)
+    state.global_index_health = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
+    state.global_index_health.add_with_ids(vecs, ids)
     print("헬스 임베딩 갱신 완료:", datetime.now())
 
 def start_scheduler():

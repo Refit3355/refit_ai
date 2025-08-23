@@ -5,7 +5,7 @@ import faiss
 
 from app.core.db import safe_select
 from app.core.embedding import encode_queries, encode_passages
-from app.core.scheduler import global_index  
+from app.core import state
 
 # ---- 최소 프레임 로더 ----
 def load_frames() -> dict:
@@ -85,8 +85,8 @@ def simple_recommend(
 
     # 텍스트 부착
     dp = attach_product_text(dp)
-    if global_index is not None and prefer_category_id is None:
-        index = global_index
+    if state.global_index is not None and prefer_category_id is None:
+        index = state.global_index
     else:
         index = build_faiss_index(dp)
 
