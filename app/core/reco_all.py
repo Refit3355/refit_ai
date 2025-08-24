@@ -77,7 +77,7 @@ def _nz(x, default):
         pass
     return default
 
-SKIN_TYPE_MAP = {1:"건성", 2:"중성", 3:"지성", 4:"복합성", 5:"수분 부족 지성"}
+SKIN_TYPE_MAP = {0:"건성", 1:"중성", 2:"지성", 3:"복합성", 4:"수분 부족 지성"}
 SKIN_FLAG_2_LABEL = {
     "ATOPIC":"아토피","ACNE":"여드름","WHITENING":"미백","SEBUM":"피지",
     "INNER_DRYNESS":"속건조","WRINKLES":"주름","ENLARGED_PORES":"모공","REDNESS":"홍조","KERATIN":"각질"

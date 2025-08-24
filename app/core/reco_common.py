@@ -119,7 +119,7 @@ def simple_recommend(
         row = df_skin[df_skin["MEMBER_ID"] == member_id]
         if not row.empty:
             try:
-                SKIN_TYPE_MAP = {1:"건성", 2:"중성", 3:"지성", 4:"복합성", 5:"수분 부족 지성"}
+                SKIN_TYPE_MAP = {0:"건성", 1:"중성", 2:"지성", 3:"복합성", 4:"수분 부족 지성"}
                 skin_type_txt = SKIN_TYPE_MAP.get(int(row.iloc[0]["SKIN_TYPE"]))
                 if skin_type_txt:
                     enriched = f"{enriched} | 피부타입={skin_type_txt}"
