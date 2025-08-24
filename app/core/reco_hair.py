@@ -84,7 +84,7 @@ def _nz(x, default):
         pass
     return default
 
-SKIN_TYPE_MAP = {1:"건성", 2:"중성", 3:"지성", 4:"복합성", 5:"수분 부족 지성"}
+SKIN_TYPE_MAP = {0:"건성", 1:"중성", 2:"지성", 3:"복합성", 4:"수분 부족 지성"}
 
 HAIR_FLAG_2_LABEL = {
     "HAIR_LOSS":"탈모","DAMAGED_HAIR":"손상모","SCALP_TROUBLE":"두피트러블","DANDRUFF":"비듬"
