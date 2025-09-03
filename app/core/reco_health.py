@@ -270,11 +270,15 @@ def weather_bonus_for_product(product_id: int, weather: dict, prod_effects: Dict
 # 메인
 # -----------------------------
 def recommend_health(member_id: int,
-                     frames: dict,
+                     frames: Optional[dict] = None,
                      prefer_category_id: Optional[int] = None,
                      topk: int = TOPK,
                      final: int = FINAL,
                      weather_ctx: Optional[dict] = None) -> pd.DataFrame:
+    
+    if frames is None:
+        frames = state.global_frames_health or load_frames_health()
+
     dp = frames["df_product"]
     dc = frames["df_category"]
 

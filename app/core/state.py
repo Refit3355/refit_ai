@@ -3,3 +3,9 @@ global_index_beauty = None
 global_index_hair = None
 global_index_health = None
 global_weather_ctx = None
+
+global_frames_all = None
+global_frames_beauty = None
+global_frames_hair = None
+global_frames_health = None
+

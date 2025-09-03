@@ -17,6 +17,10 @@ def refresh_weather():
     except Exception as e:
         print("날씨 캐싱 실패:", e)
         
+
+# -----------------------------
+# 전체(All) 임베딩 + 상품 캐싱
+# -----------------------------
 def refresh_embeddings():
     print("임베딩 갱신 시작:", datetime.now())
     frames = load_frames_all()
@@ -26,8 +30,15 @@ def refresh_embeddings():
 
     state.global_index = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
     state.global_index.add_with_ids(vecs, ids)
-    print("임베딩 갱신 완료:", datetime.now())
-    
+
+    # 상품 캐싱
+    state.global_frames_all = frames
+    print("임베딩 갱신 + 상품 캐싱 완료:", datetime.now())
+
+
+# -----------------------------
+# 뷰티(Beauty) 임베딩 + 상품 캐싱
+# -----------------------------
 def refresh_embeddings_beauty():
     print("뷰티 임베딩 갱신 시작:", datetime.now())
     from app.core.reco_beauty import load_frames_beauty, attach_product_text, build_prod_effects
@@ -38,8 +49,15 @@ def refresh_embeddings_beauty():
 
     state.global_index_beauty = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
     state.global_index_beauty.add_with_ids(vecs, ids)
-    print("뷰티 임베딩 갱신 완료:", datetime.now())
 
+    # 상품 캐싱
+    state.global_frames_beauty = frames
+    print("뷰티 임베딩 갱신 + 상품 캐싱 완료:", datetime.now())
+
+
+# -----------------------------
+# 헤어(Hair) 임베딩 + 상품 캐싱
+# -----------------------------
 def refresh_embeddings_hair():
     print("헤어 임베딩 갱신 시작:", datetime.now())
     from app.core.reco_hair import load_frames_hair, attach_product_text, build_prod_effects
@@ -50,8 +68,15 @@ def refresh_embeddings_hair():
 
     state.global_index_hair = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
     state.global_index_hair.add_with_ids(vecs, ids)
-    print("헤어 임베딩 갱신 완료:", datetime.now())
-    
+
+    # 상품 캐싱
+    state.global_frames_hair = frames
+    print("헤어 임베딩 갱신 + 상품 캐싱 완료:", datetime.now())
+
+
+# -----------------------------
+# 헬스(Health) 임베딩 + 상품 캐싱
+# -----------------------------
 def refresh_embeddings_health():
     print("헬스 임베딩 갱신 시작:", datetime.now())
     from app.core.reco_health import load_frames_health, attach_product_text, build_prod_effects
@@ -62,14 +87,21 @@ def refresh_embeddings_health():
 
     state.global_index_health = faiss.IndexIDMap(faiss.IndexFlatIP(vecs.shape[1]))
     state.global_index_health.add_with_ids(vecs, ids)
-    print("헬스 임베딩 갱신 완료:", datetime.now())
 
+    # 상품 캐싱
+    state.global_frames_health = frames
+    print("헬스 임베딩 갱신 + 상품 캐싱 완료:", datetime.now())
+
+
+# -----------------------------
+# 스케줄러 시작
+# -----------------------------
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Seoul"))
-    scheduler.add_job(refresh_embeddings, "cron", hour=0, minute=0)       # 매일 자정 (전체)
+    scheduler.add_job(refresh_embeddings, "cron", hour=0, minute=0)         # 매일 자정 (전체)
     scheduler.add_job(refresh_embeddings_beauty, "cron", hour=0, minute=5)  # 매일 자정+5분 (뷰티)
-    scheduler.add_job(refresh_embeddings_hair, "cron", hour=0, minute=10)  # 매일 자정+10분 (헤어)
-    scheduler.add_job(refresh_embeddings_health, "cron", hour=0, minute=15)  # 매일 자정+15분 (헬스)
+    scheduler.add_job(refresh_embeddings_hair, "cron", hour=0, minute=10)   # 매일 자정+10분 (헤어)
+    scheduler.add_job(refresh_embeddings_health, "cron", hour=0, minute=15) # 매일 자정+15분 (헬스)
     
     scheduler.add_job(refresh_weather, "interval", minutes=30) # 30분마다 한 번씩 날씨 캐싱
 
