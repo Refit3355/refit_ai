@@ -278,6 +278,10 @@ def recommend_all(member_id: int,
 
     prod_effects = build_prod_effects(frames)
     dp = attach_product_text(dp, prod_effects)
+    
+    # 재고 없는 상품 제외 처리
+    if "STOCK" in dp.columns:
+        dp = dp[pd.to_numeric(dp["STOCK"], errors="coerce").fillna(0) > 0]
 
     if prefer_category_id is not None and "CATEGORY_ID" in dp.columns:
         dp = dp[dp["CATEGORY_ID"] == int(prefer_category_id)]
