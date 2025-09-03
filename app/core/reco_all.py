@@ -260,11 +260,15 @@ def effect_match_score(product_id: int, target_effects: List[str], prod_effects:
 
 # ===== 메인(전체) =====
 def recommend_all(member_id: int,
-                  frames: dict,
+                  frames: Optional[dict] = None,
                   prefer_category_id: Optional[int] = None,
                   topk: int = TOPK,
                   final: int = FINAL,
                   weather_ctx: Optional[dict] = None) -> pd.DataFrame:
+    
+    if frames is None:
+        frames = state.global_frames_all or load_frames_all()
+    
     dp = frames["df_product"]
     dc = frames["df_category"]
 

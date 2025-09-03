@@ -258,11 +258,15 @@ def weather_bonus_for_product(product_id: int, weather: dict, prod_effects: Dict
 # 메인
 # --------------------------------
 def recommend_hair(member_id: int,
-                   frames: dict,
+                   frames: Optional[dict] = None,
                    prefer_category_id: Optional[int] = None,
                    topk: int = TOPK,
                    final: int = FINAL,
                    weather_ctx: Optional[dict] = None) -> pd.DataFrame:
+    
+    if frames is None:
+        frames = state.global_frames_hair or load_frames_hair()
+    
     dp = frames["df_product"]
     dc = frames["df_category"]
 

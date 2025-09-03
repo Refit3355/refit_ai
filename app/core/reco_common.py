@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 import faiss
@@ -6,6 +6,7 @@ import faiss
 from app.core.db import safe_select
 from app.core.embedding import encode_queries, encode_passages
 from app.core import state
+
 
 # ---- 최소 프레임 로더 ----
 def load_frames() -> dict:
@@ -59,12 +60,16 @@ def build_faiss_index(dp: pd.DataFrame):
 # ---- 단순 공통 추천 (비상용/백업 로직) ----
 def simple_recommend(
     query_text: str,
-    frames: dict,
+    frames: Optional[dict] = None,
     topk=200,
     final=100,
     product_type: int = 0,
     prefer_category_id: int | None = None
 ) -> pd.DataFrame:
+    
+    if frames is None:
+        frames = state.global_frames_all or load_frames()
+
     dp = frames["df_product"]
     if dp.empty:
         return pd.DataFrame(columns=[
