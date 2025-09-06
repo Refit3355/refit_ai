@@ -7,6 +7,7 @@ from app.core.reco_all import load_frames_all, recommend_all
 from app.core.reco_hair import load_frames_hair, recommend_hair
 from app.core.reco_health import load_frames_health, recommend_health
 from app.core.weather import fetch_weather_ctx
+from app.core import state
 
 router = APIRouter(prefix="/products/recommendation", tags=["recommend"])
 
@@ -27,19 +28,19 @@ def _fallback_basic(req: RecommendAiRequest, weather, label: str):
 @router.post("/ai", response_model=RecommendAiResponse)
 def recommend_ai(req: RecommendAiRequest):
     try:
-        weather = fetch_weather_ctx(req.location or "서울")
+        weather = state.global_weather_ctx or fetch_weather_ctx(req.location or "서울")
 
         # 0) 전체
         if req.productType == 0:
             try:
-                frames = load_frames_all()
+                frames = state.global_frames_all or load_frames_all()
                 df = recommend_all(
                     member_id=req.memberId,
                     frames=frames,
                     prefer_category_id=req.preferCategoryId,
                     topk=req.topk or 200,
                     final=req.final or 10,
-                    weather_ctx=weather
+                    weather_ctx=state.global_weather_ctx or weather
                 )
                 if df.empty:
                     return _fallback_basic(req, weather, "type:0(empty->basic)")
@@ -52,7 +53,7 @@ def recommend_ai(req: RecommendAiRequest):
         # 1) 뷰티
         if req.productType == 1:
             try:
-                frames = load_frames_beauty()
+                frames = state.global_frames_beauty or load_frames_beauty()
                 df = recommend_beauty(
                     member_id=req.memberId,
                     frames=frames,
@@ -72,7 +73,7 @@ def recommend_ai(req: RecommendAiRequest):
         # 2) 헤어
         if req.productType == 2:
             try:
-                frames = load_frames_hair()
+                frames = state.global_frames_hair or load_frames_hair()
                 df = recommend_hair(
                     member_id=req.memberId,
                     frames=frames,
@@ -92,7 +93,7 @@ def recommend_ai(req: RecommendAiRequest):
         # 3) 건강기능식품
         if req.productType == 3:
             try:
-                frames = load_frames_health()
+                frames = state.global_frames_health or load_frames_health()
                 df = recommend_health(
                     member_id=req.memberId,
                     frames=frames,
