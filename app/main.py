@@ -5,6 +5,7 @@ import logging
 from app.routers import recommend
 from app.core.embedding import init_model
 from app.core.scheduler import start_scheduler  
+from app.core import state
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,3 +33,19 @@ app.include_router(recommend.router)
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+from app.core import state
+
+@app.get("/debug/cache-status")
+def cache_status():
+    return {
+        "global_index": state.global_index is not None,
+        "global_index_beauty": state.global_index_beauty is not None,
+        "global_index_hair": state.global_index_hair is not None,
+        "global_index_health": state.global_index_health is not None,
+        "global_weather_ctx": state.global_weather_ctx is not None,
+        "global_frames_all": state.global_frames_all is not None,
+        "global_frames_beauty": state.global_frames_beauty is not None,
+        "global_frames_hair": state.global_frames_hair is not None,
+        "global_frames_health": state.global_frames_health is not None,
+    }
