@@ -4,7 +4,14 @@ import logging
 
 from app.routers import recommend
 from app.core.embedding import init_model
-from app.core.scheduler import start_scheduler  
+from app.core.scheduler import (
+    start_scheduler,
+    refresh_embeddings,
+    refresh_embeddings_beauty,
+    refresh_embeddings_hair,
+    refresh_embeddings_health,
+    refresh_weather,
+)
 from app.core import state
 
 logging.basicConfig(level=logging.INFO)
@@ -34,8 +41,6 @@ app.include_router(recommend.router)
 def healthz():
     return {"ok": True}
 
-from app.core import state
-
 @app.get("/debug/cache-status")
 def cache_status():
     return {
@@ -49,3 +54,15 @@ def cache_status():
         "global_frames_hair": state.global_frames_hair is not None,
         "global_frames_health": state.global_frames_health is not None,
     }
+
+@app.post("/debug/force-refresh")
+def force_refresh():
+    try:
+        refresh_embeddings()
+        refresh_embeddings_beauty()
+        refresh_embeddings_hair()
+        refresh_embeddings_health()
+        refresh_weather()
+        return {"ok": True, "msg": "모든 캐시 강제 갱신 완료"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
