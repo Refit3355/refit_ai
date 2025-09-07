@@ -2,6 +2,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import pytz
 from datetime import datetime
 import faiss
+import numpy as np
 
 from app.core.reco_all import load_frames_all, attach_product_text, build_prod_effects
 from app.core.embedding import encode_passages
